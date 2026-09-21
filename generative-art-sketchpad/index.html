@@ -1,0 +1,491 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>ジェネレーティブ・アート スケッチパッド</title>
+<style>
+  :root {
+    --bg-dark: #0b0e14;
+    --bg-light: #f4f2ec;
+    --panel-bg: rgba(20, 22, 30, 0.72);
+    --panel-bg-light: rgba(255, 255, 255, 0.78);
+    --text: #eef0f5;
+    --text-light: #1c1e26;
+    --accent: #7ee0d6;
+    --accent2: #f2a3c0;
+    --border: rgba(255,255,255,0.14);
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0;
+    padding: 0;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    background: var(--bg-dark);
+    font-family: "Segoe UI", "Hiragino Sans", "Yu Gothic", sans-serif;
+    color: var(--text);
+    -webkit-user-select: none;
+    user-select: none;
+    touch-action: none;
+  }
+  body.light { background: var(--bg-light); color: var(--text-light); }
+
+  #canvasWrap {
+    position: fixed;
+    inset: 0;
+  }
+  canvas {
+    display: block;
+    width: 100%;
+    height: 100%;
+    cursor: crosshair;
+  }
+
+  .panel {
+    position: fixed;
+    top: 16px;
+    left: 16px;
+    right: 16px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: center;
+    background: var(--panel-bg);
+    border: 1px solid var(--border);
+    backdrop-filter: blur(10px);
+    border-radius: 14px;
+    padding: 10px 14px;
+    z-index: 10;
+    transition: opacity 0.25s ease, transform 0.25s ease;
+  }
+  body.light .panel { background: var(--panel-bg-light); }
+
+  .panel.hidden {
+    opacity: 0;
+    transform: translateY(-12px);
+    pointer-events: none;
+  }
+
+  .title {
+    font-weight: 700;
+    font-size: 14px;
+    letter-spacing: 0.02em;
+    margin-right: 8px;
+    white-space: nowrap;
+    opacity: 0.9;
+  }
+
+  .brush-group {
+    display: flex;
+    gap: 6px;
+    background: rgba(127,127,127,0.12);
+    padding: 4px;
+    border-radius: 10px;
+  }
+
+  button, .toggle {
+    font-family: inherit;
+    font-size: 13px;
+    border: 1px solid var(--border);
+    background: rgba(255,255,255,0.06);
+    color: inherit;
+    padding: 7px 12px;
+    border-radius: 9px;
+    cursor: pointer;
+    transition: transform 0.12s ease, background 0.15s ease, border-color 0.15s ease;
+    white-space: nowrap;
+  }
+  body.light button, body.light .toggle {
+    background: rgba(0,0,0,0.05);
+  }
+  button:hover, .toggle:hover {
+    transform: translateY(-1px);
+    border-color: var(--accent);
+  }
+  button:active { transform: translateY(0); }
+  button.active {
+    background: linear-gradient(135deg, var(--accent), var(--accent2));
+    color: #10121a;
+    border-color: transparent;
+    font-weight: 600;
+  }
+
+  .spacer { flex: 1 1 auto; min-width: 4px; }
+
+  .fadeControl {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 13px;
+    padding: 7px 12px;
+    border-radius: 9px;
+    border: 1px solid var(--border);
+    background: rgba(255,255,255,0.06);
+    white-space: nowrap;
+  }
+  body.light .fadeControl { background: rgba(0,0,0,0.05); }
+  .fadeControl .fadeEnd { font-size: 11px; opacity: 0.6; }
+  .fadeControl input[type="range"] {
+    width: 90px;
+    accent-color: var(--accent);
+    cursor: pointer;
+  }
+
+  .hint {
+    position: fixed;
+    bottom: 16px;
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: 12px;
+    opacity: 0.55;
+    background: var(--panel-bg);
+    padding: 6px 12px;
+    border-radius: 20px;
+    border: 1px solid var(--border);
+    z-index: 10;
+    pointer-events: none;
+    transition: opacity 0.25s ease;
+  }
+  body.light .hint { background: var(--panel-bg-light); }
+  .hint.hidden { opacity: 0; }
+
+  .eyeToggle {
+    position: fixed;
+    top: 16px;
+    right: 16px;
+    z-index: 11;
+    width: 38px;
+    height: 38px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 16px;
+    padding: 0;
+  }
+</style>
+</head>
+<body>
+
+<div id="canvasWrap">
+  <canvas id="art"></canvas>
+</div>
+
+<button class="eyeToggle" id="eyeToggle" title="パネルの表示切替">🎛️</button>
+
+<div class="panel" id="panel">
+  <span class="title">✨ アートパッド</span>
+
+  <div class="brush-group" id="brushGroup">
+    <button data-brush="particles" class="active">粒子</button>
+    <button data-brush="ribbon">リボン</button>
+    <button data-brush="orbit">オービット</button>
+    <button data-brush="spiro">スピロ</button>
+  </div>
+
+  <button id="paletteBtn">🎨 色を変える</button>
+  <button id="themeBtn">🌗 背景切替</button>
+
+  <label class="fadeControl" title="右にするほど残光が長く残ります">
+    <span>✨ 残光</span>
+    <span class="fadeEnd">短</span>
+    <input type="range" id="fadeSlider" min="1" max="100" step="1" value="80" />
+    <span class="fadeEnd">長</span>
+  </label>
+
+  <div class="spacer"></div>
+
+  <button id="clearBtn">🧹 消去</button>
+  <button id="saveBtn">💾 PNG保存</button>
+</div>
+
+<div class="hint" id="hint">マウス（または指）を動かして描こう。クリックでブラシ切替、Sで保存、Cで消去</div>
+
+<script>
+(() => {
+  const canvas = document.getElementById('art');
+  const ctx = canvas.getContext('2d');
+  const panel = document.getElementById('panel');
+  const eyeToggle = document.getElementById('eyeToggle');
+  const hint = document.getElementById('hint');
+  const brushGroup = document.getElementById('brushGroup');
+  const paletteBtn = document.getElementById('paletteBtn');
+  const themeBtn = document.getElementById('themeBtn');
+  const fadeSlider = document.getElementById('fadeSlider');
+  const clearBtn = document.getElementById('clearBtn');
+  const saveBtn = document.getElementById('saveBtn');
+
+  let dpr = Math.max(1, window.devicePixelRatio || 1);
+  let W = 0, H = 0;
+
+  function resize() {
+    W = window.innerWidth;
+    H = window.innerHeight;
+    canvas.width = W * dpr;
+    canvas.height = H * dpr;
+    canvas.style.width = W + 'px';
+    canvas.style.height = H + 'px';
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    // repaint background fade base
+    ctx.fillStyle = document.body.classList.contains('light') ? '#f4f2ec' : '#0b0e14';
+    ctx.fillRect(0, 0, W, H);
+  }
+  window.addEventListener('resize', resize);
+
+  // ---------- Palettes ----------
+  const palettes = [
+    ['#7ee0d6', '#f2a3c0', '#f7d774', '#8ea6f0'],
+    ['#ff6b6b', '#ffd93d', '#6bcB77', '#4d96ff'],
+    ['#f72585', '#7209b7', '#3a0ca3', '#4cc9f0'],
+    ['#ffb703', '#fb8500', '#219ebc', '#8ecae6'],
+    ['#e07a5f', '#3d405b', '#81b29a', '#f2cc8f'],
+    ['#00f5d4', '#00bbf9', '#9b5de5', '#f15bb5'],
+    ['#ff9f1c', '#ffbf69', '#cbf3f0', '#2ec4b6'],
+  ];
+  let paletteIndex = 0;
+  function currentPalette() { return palettes[paletteIndex]; }
+  function randomColor() {
+    const p = currentPalette();
+    return p[Math.floor(Math.random() * p.length)];
+  }
+  function hexToRgb(hex) {
+    const v = parseInt(hex.slice(1), 16);
+    return [(v >> 16) & 255, (v >> 8) & 255, v & 255];
+  }
+  function rgba(hex, a) {
+    const [r,g,b] = hexToRgb(hex);
+    return `rgba(${r},${g},${b},${a})`;
+  }
+
+  // ---------- Pointer tracking ----------
+  const pointer = { x: W/2, y: H/2, px: W/2, py: H/2, down: false, speed: 0, angle: 0, active: false };
+
+  function setPointerFromEvent(e) {
+    let x, y;
+    if (e.touches && e.touches.length) {
+      x = e.touches[0].clientX; y = e.touches[0].clientY;
+    } else {
+      x = e.clientX; y = e.clientY;
+    }
+    pointer.px = pointer.x; pointer.py = pointer.y;
+    pointer.x = x; pointer.y = y;
+    const dx = pointer.x - pointer.px, dy = pointer.y - pointer.py;
+    pointer.speed = Math.min(60, Math.hypot(dx, dy));
+    pointer.angle = Math.atan2(dy, dx);
+  }
+
+  // ---------- Brushes ----------
+  let brush = 'particles';
+  const particles = [];
+  let spiroAngle = 0;
+  let orbitAngle = 0;
+  let ribbonHue = 0;
+
+  function spawnParticles() {
+    if (!pointer.active) return;
+    const count = 1 + Math.floor(pointer.speed / 6);
+    for (let i = 0; i < count; i++) {
+      const spread = (Math.random() - 0.5) * 1.4;
+      const a = pointer.angle + Math.PI + spread;
+      const speed = 0.6 + Math.random() * (1 + pointer.speed / 10);
+      particles.push({
+        x: pointer.x, y: pointer.y,
+        vx: Math.cos(a) * speed, vy: Math.sin(a) * speed,
+        r: 1.5 + Math.random() * (3 + pointer.speed / 8),
+        life: 1,
+        decay: 0.0015 + Math.random() * 0.004,
+        color: randomColor(),
+      });
+    }
+  }
+
+  function drawParticles() {
+    spawnParticles();
+    for (let i = particles.length - 1; i >= 0; i--) {
+      const p = particles[i];
+      p.x += p.vx; p.y += p.vy;
+      p.vx *= 0.98; p.vy *= 0.98;
+      p.life -= p.decay;
+      if (p.life <= 0) { particles.splice(i, 1); continue; }
+      ctx.beginPath();
+      ctx.fillStyle = rgba(p.color, p.life * 0.9);
+      ctx.arc(p.x, p.y, p.r * p.life, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+
+  function drawRibbon() {
+    if (!pointer.active) return;
+    ribbonHue += 1.2;
+    const c1 = currentPalette()[Math.floor(ribbonHue / 40) % currentPalette().length];
+    const w = 2 + Math.min(30, pointer.speed) * 0.6;
+    ctx.beginPath();
+    ctx.moveTo(pointer.px, pointer.py);
+    ctx.lineTo(pointer.x, pointer.y);
+    ctx.strokeStyle = rgba(c1, 0.55);
+    ctx.lineWidth = w;
+    ctx.lineCap = 'round';
+    ctx.stroke();
+
+    // sparkle accent
+    if (Math.random() < 0.5) {
+      ctx.beginPath();
+      ctx.fillStyle = rgba(randomColor(), 0.8);
+      ctx.arc(pointer.x, pointer.y, Math.random() * 3 + 1, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+
+  function drawOrbit() {
+    if (!pointer.active) return;
+    orbitAngle += 0.15 + pointer.speed * 0.01;
+    const n = 3;
+    for (let i = 0; i < n; i++) {
+      const a = orbitAngle + (i * Math.PI * 2) / n;
+      const radius = 20 + 18 * Math.sin(orbitAngle * 0.6 + i);
+      const x = pointer.x + Math.cos(a) * radius;
+      const y = pointer.y + Math.sin(a) * radius;
+      ctx.beginPath();
+      ctx.fillStyle = rgba(currentPalette()[i % currentPalette().length], 0.85);
+      ctx.arc(x, y, 3 + Math.sin(orbitAngle + i) * 1.5, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.strokeStyle = rgba(currentPalette()[i % currentPalette().length], 0.2);
+      ctx.lineWidth = 1;
+      ctx.moveTo(pointer.x, pointer.y);
+      ctx.lineTo(x, y);
+      ctx.stroke();
+    }
+  }
+
+  function drawSpiro() {
+    if (!pointer.active) return;
+    spiroAngle += 0.25;
+    const R = 60, r = 23, d = 40;
+    const k = R - r;
+    const t = spiroAngle;
+    const x = pointer.x + k * Math.cos(t) + d * Math.cos((k / r) * t);
+    const y = pointer.y + k * Math.sin(t) - d * Math.sin((k / r) * t);
+    ctx.beginPath();
+    ctx.fillStyle = rgba(randomColor(), 0.75);
+    ctx.arc(x, y, 2.2, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  let fadeAmount = 0.02; // 残光の消える速さ: 小さいほど長く残る
+
+  function applyFadeSlider(value) {
+    // value: 1(短)〜100(長) → fadeAmount: 大きい(速く消える)〜小さい(長く残る)
+    fadeAmount = 0.002 + (100 - value) * 0.0009;
+  }
+
+  function fadeBackground() {
+    const isLight = document.body.classList.contains('light');
+    const a = fadeAmount;
+    ctx.fillStyle = isLight ? `rgba(244,242,236,${a})` : `rgba(11,14,20,${a})`;
+    ctx.fillRect(0, 0, W, H);
+  }
+
+  function tick() {
+    fadeBackground();
+    switch (brush) {
+      case 'particles': drawParticles(); break;
+      case 'ribbon': drawRibbon(); break;
+      case 'orbit': drawOrbit(); break;
+      case 'spiro': drawSpiro(); break;
+    }
+    requestAnimationFrame(tick);
+  }
+
+  // ---------- Input events ----------
+  function onMove(e) {
+    setPointerFromEvent(e);
+    pointer.active = true;
+    if (e.cancelable) e.preventDefault();
+  }
+  function onLeave() { pointer.active = false; }
+
+  canvas.addEventListener('mousemove', onMove);
+  canvas.addEventListener('mousedown', (e) => { pointer.down = true; onMove(e); });
+  window.addEventListener('mouseup', () => pointer.down = false);
+  canvas.addEventListener('mouseleave', onLeave);
+
+  canvas.addEventListener('touchstart', onMove, { passive: false });
+  canvas.addEventListener('touchmove', onMove, { passive: false });
+  canvas.addEventListener('touchend', onLeave);
+
+  // ---------- Controls ----------
+  brushGroup.addEventListener('click', (e) => {
+    const btn = e.target.closest('button[data-brush]');
+    if (!btn) return;
+    brush = btn.dataset.brush;
+    [...brushGroup.querySelectorAll('button')].forEach(b => b.classList.toggle('active', b === btn));
+  });
+
+  paletteBtn.addEventListener('click', () => {
+    paletteIndex = (paletteIndex + 1) % palettes.length;
+    flashPalettePreview();
+  });
+
+  function flashPalettePreview() {
+    const p = currentPalette();
+    paletteBtn.style.background = `linear-gradient(90deg, ${p.join(',')})`;
+    paletteBtn.style.color = '#10121a';
+    setTimeout(() => { paletteBtn.style.background = ''; paletteBtn.style.color = ''; }, 500);
+  }
+
+  themeBtn.addEventListener('click', () => {
+    document.body.classList.toggle('light');
+  });
+
+  fadeSlider.addEventListener('input', () => {
+    applyFadeSlider(Number(fadeSlider.value));
+  });
+
+  clearBtn.addEventListener('click', clearCanvas);
+  function clearCanvas() {
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.fillStyle = document.body.classList.contains('light') ? '#f4f2ec' : '#0b0e14';
+    ctx.fillRect(0, 0, W, H);
+    particles.length = 0;
+  }
+
+  saveBtn.addEventListener('click', savePng);
+  function savePng() {
+    const link = document.createElement('a');
+    const ts = new Date().toISOString().replace(/[:.]/g, '-');
+    link.download = `art-${ts}.png`;
+    link.href = canvas.toDataURL('image/png');
+    link.click();
+  }
+
+  eyeToggle.addEventListener('click', () => {
+    panel.classList.toggle('hidden');
+  });
+
+  window.addEventListener('keydown', (e) => {
+    if (e.key === 's' || e.key === 'S') savePng();
+    if (e.key === 'c' || e.key === 'C') clearCanvas();
+    if (e.key === 'h' || e.key === 'H') panel.classList.toggle('hidden');
+  });
+
+  // Hide hint after first interaction
+  let hintHidden = false;
+  function hideHintOnce() {
+    if (hintHidden) return;
+    hintHidden = true;
+    hint.classList.add('hidden');
+  }
+  canvas.addEventListener('mousedown', hideHintOnce);
+  canvas.addEventListener('touchstart', hideHintOnce);
+
+  // ---------- Init ----------
+  applyFadeSlider(Number(fadeSlider.value));
+  resize();
+  tick();
+})();
+</script>
+</body>
+</html>
